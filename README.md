@@ -21,6 +21,11 @@ Rollo-Automatik und die Komfort-/Eco-Temperaturen des Raums.
   **Endzeitpunkt mit Datum und Uhrzeit** (*Bis* morgen 06:45) ein.
   Ist ein Override aktiv, siehst du die **Restlaufzeit und Endzeit**, kannst ihn **verlängern** (+1 h …),
   durch Tippen auf eine andere Laufzeit **neu setzen** oder **beenden**.
+- **Zeitplan:** wann der **nächste Zeitblock** beginnt und welche **Temperatur** dort gilt – direkt unter der
+  Zieltemperatur („Nächster Block: 16:00 · 21 °C“) und als Liste der nächsten Zeiträume (Jetzt / Komfort / Block / Eco
+  mit Uhrzeit und Temperatur). Berücksichtigt Block-Temperaturen (`temperature`, `heat_temperature`,
+  `cool_temperature`), Komfort/Eco des Raums, die Einstellung „außerhalb des Zeitplans aus“ und einen
+  Zeitplan-Wähler (`input_boolean`/`input_number`).
 - **Presets:** Zeitplan, Komfort, Eco und Halten (aktuelle Temperatur halten), jeweils mit der Raum-Temperatur.
 - **Betriebsart:** Aus, Heizen, Kühlen, Auto (je nachdem, was der Raum kann).
 - **Status-Chips:** Fenster offen/zu, Urlaub (mit Enddatum), Abwesend, Raum leer, Schimmelrisiko,
@@ -83,6 +88,8 @@ Der Editor schreibt diese Einstellungen selbst; von Hand musst du nichts eintrag
 | `show_target` | `true` | Zieltemperatur |
 | `show_presets` | `true` | Zeitplan / Komfort / Eco / Halten |
 | `show_modes` | `true` | Aus / Heizen / Kühlen / Auto |
+| `show_schedule` | `true` | Zeitplan mit nächstem Block und Temperatur |
+| `schedule_items` | `3` | Anzahl der angezeigten Zeitplan-Einträge (1–8) |
 | `show_windows` | `true` | Fenster & Türen |
 | `show_toggles` | `true` | Urlaubsmodus, Rollo-Automatik |
 | `show_climate_control` | `false` | zusätzlich Schalter „Klimasteuerung“ |
@@ -112,6 +119,9 @@ Die Karte nutzt die Entitäten von RoomMind und, wo diese nicht ausreichen, die 
 | Rollo-Automatik fortsetzen | `roommind/covers/clear_override` |
 | Raum-Einstellungen speichern | `roommind/rooms/save` (nur die geänderten Felder) |
 
+Den Zeitplan liest die Karte mit `schedule.get_schedule` aus dem Zeitplan-Helfer, den RoomMind für den Raum gerade
+verwendet (alle 5 Minuten und sobald der Helfer geändert wird).
+
 Live-Daten wie Override-Endzeit, Fenstersensoren, Heizleistung oder Außentemperatur holt die Karte über
 `roommind/rooms/list` (alle 30 s und nach jeder Änderung). Ist die API nicht erreichbar, funktioniert die Karte mit
 den Grundfunktionen der Klima-Entität weiter (Temperatur, Presets, Modus), feste Laufzeiten sind dann ausgeblendet.
@@ -133,7 +143,9 @@ npm run dev       # Watch-Modus + http://localhost:5056/dev/index.html
 ## Releases
 
 Ein Release entsteht automatisch, wenn ein Tag wie `v1.2.0` gepusht wird (oder über **Actions → Release → Run
-workflow**). Der Workflow baut die Karte und hängt `roommind-card.js` an das Release an.
+workflow**). Der Workflow baut die Karte und hängt `roommind-card.js` an das Release an. Beim manuellen Start
+legt er den Tag selbst an; mit der Option *overwrite* verschiebt er einen bestehenden Tag auf den aktuellen Commit
+und aktualisiert dessen Release.
 
 ## Lizenz
 

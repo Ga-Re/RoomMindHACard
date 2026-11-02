@@ -2,7 +2,7 @@ import { language, localize } from "./localize.js";
 
 export const CARD_TYPE = "roommind-card";
 export const EDITOR_TYPE = "roommind-card-editor";
-export const VERSION = "1.1.0";
+export const VERSION = "1.2.0";
 
 /** Durations (hours) offered by default. "schedule" and "permanent" are special values. */
 export const DEFAULT_DURATIONS = ["schedule", 1, 2, 4, "permanent"];
@@ -22,6 +22,8 @@ export const DEFAULTS = {
   show_climate_control: false,
   show_info: true,
   show_settings: true,
+  show_schedule: true,
+  schedule_items: 3,
   settings_open: false,
   compact: false,
   apply_delay: 1200,

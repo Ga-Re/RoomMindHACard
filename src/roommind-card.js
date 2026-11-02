@@ -27,9 +27,11 @@ import {
   toLocalInput,
   windowIcon,
 } from "./utils.js";
+import { activeScheduleIndex, buildTimeline } from "./schedule.js";
 import "./editor.js";
 
 const POLL_INTERVAL = 30000;
+const SCHEDULE_REFRESH = 5 * 60 * 1000;
 const PRESET_ORDER = ["none", "comfort", "eco", "manual"];
 const PRESET_ICONS = {
   none: "mdi:calendar-clock",
@@ -74,6 +76,7 @@ export class RoomMindCard extends LitElement {
     _customMinutes: { state: true },
     _customUntil: { state: true },
     _customError: { state: true },
+    _schedules: { state: true },
   };
 
   static styles = cardStyles;
@@ -185,7 +188,41 @@ export class RoomMindCard extends LitElement {
   _watchedEntities() {
     const ids = [this._config?.entity, ...Object.values(this._relatedEntities())];
     for (const id of this._room?.window_sensors || []) ids.push(id);
+    for (const schedule of this._room?.schedules || []) ids.push(schedule.entity_id);
+    ids.push(this._room?.schedule_selector_entity);
     return ids.filter(Boolean);
+  }
+
+  /** Entity id of the schedule RoomMind uses right now (selector aware). */
+  _scheduleEntity() {
+    const room = this._room;
+    const idx = activeScheduleIndex(room, this.hass);
+    return idx >= 0 ? room.schedules[idx]?.entity_id || undefined : undefined;
+  }
+
+  /** Loads the blocks of the active schedule helper (schedule.get_schedule), cached for a few minutes. */
+  async _fetchSchedule(force = false) {
+    const entityId = this._scheduleEntity();
+    if (!entityId || !entityId.startsWith("schedule.") || !this.hass) return;
+    const cached = this._schedules?.[entityId];
+    if (!force && cached && Date.now() - cached.fetched < SCHEDULE_REFRESH) return;
+    if (this._scheduleLoading === entityId) return;
+    this._scheduleLoading = entityId;
+    try {
+      const result = await this.hass.callWS({
+        type: "call_service",
+        domain: "schedule",
+        service: "get_schedule",
+        target: { entity_id: entityId },
+        return_response: true,
+      });
+      const blocks = result?.response?.[entityId];
+      this._schedules = { ...(this._schedules || {}), [entityId]: { blocks, fetched: Date.now() } };
+    } catch (_err) {
+      this._schedules = { ...(this._schedules || {}), [entityId]: { blocks: undefined, fetched: Date.now() } };
+    } finally {
+      this._scheduleLoading = undefined;
+    }
   }
 
   async _fetchRooms() {
@@ -202,6 +239,7 @@ export class RoomMindCard extends LitElement {
       }
       this._rooms = result;
       this._apiOk = Boolean(this._areaId && result?.rooms?.[this._areaId]);
+      if (this._config.show_schedule !== false) this._fetchSchedule();
     } catch (_err) {
       this._apiOk = false;
     } finally {
@@ -237,6 +275,15 @@ export class RoomMindCard extends LitElement {
         if (this._pending && this._appliedAt && this._bandMatches(this._pending)) this._pending = undefined;
       }
       if (!old && this._apiOk === undefined) this._fetchRooms();
+      const scheduleId = this._scheduleEntity();
+      if (old && scheduleId && old.states?.[scheduleId] !== this.hass.states?.[scheduleId]) {
+        const before = old.states?.[scheduleId]?.attributes;
+        const after = this.hass.states?.[scheduleId]?.attributes;
+        // A new next_event only means a block started/ended; anything else may be an edit
+        if (!before || !after || JSON.stringify({ ...before, next_event: 0 }) !== JSON.stringify({ ...after, next_event: 0 })) {
+          this._fetchSchedule(true);
+        }
+      }
     }
   }
 
@@ -563,6 +610,7 @@ export class RoomMindCard extends LitElement {
         ${controllable && c.show_duration ? this._renderDurations() : nothing}
         ${controllable && c.show_presets ? this._renderPresets(stateObj) : nothing}
         ${controllable && c.show_modes ? this._renderModes(stateObj) : nothing}
+        ${c.show_schedule ? this._renderSchedule() : nothing}
         ${c.show_windows ? this._renderWindows() : nothing} ${c.show_toggles ? this._renderToggles() : nothing}
         ${c.show_info ? this._renderInfo(stateObj) : nothing}
         ${c.show_settings ? this._renderSettings() : nothing}
@@ -719,9 +767,20 @@ export class RoomMindCard extends LitElement {
     const t = (key, vars) => localize(this.hass, key, vars);
     const active = this._overrideActive();
     if (!active) {
+      const next = this._config.show_schedule !== false ? this._nextBlock() : undefined;
       return html`<div class="override">
         <ha-icon icon="mdi:calendar-clock"></ha-icon>
-        <div class="text"><div class="title">${t("override.schedule")}</div></div>
+        <div class="text">
+          <div class="title">${t("override.schedule")}</div>
+          ${next
+            ? html`<div class="sub">
+                ${t("schedule.next_block", {
+                  time: formatUntil(this.hass, next.start / 1000),
+                  temp: this._periodTemp(next),
+                })}
+              </div>`
+            : nothing}
+        </div>
       </div>`;
     }
     const preset = this._overridePreset() || "manual";
@@ -983,6 +1042,110 @@ export class RoomMindCard extends LitElement {
             <span class="seg-label">${t(`hvac.${mode}`)}</span>
           </button>`,
         )}
+      </div>
+    `;
+  }
+
+  // --- Schedule ---------------------------------------------------------------------------
+
+  /** Upcoming periods of the active RoomMind schedule, or undefined when unknown. */
+  _timeline() {
+    const room = this._room;
+    const entityId = this._scheduleEntity();
+    const blocks = entityId ? this._schedules?.[entityId]?.blocks : undefined;
+    if (!room || !blocks) return undefined;
+    const key = `${entityId}|${this._schedules[entityId].fetched}|${Math.floor(this._now / 60000)}|${this._rooms?.schedule_off_action}|${room.comfort_heat}|${room.comfort_cool}|${room.eco_heat}|${room.eco_cool}`;
+    if (this._timelineKey === key) return this._timelineCache;
+    const c = (v, fallback) => roundToStep(fromCelsius(this.hass, v ?? fallback), 0.1);
+    this._timelineCache = buildTimeline(
+      blocks,
+      {
+        comfortHeat: c(room.comfort_heat ?? room.comfort_temp, 21),
+        comfortCool: c(room.comfort_cool, 24),
+        ecoHeat: c(room.eco_heat ?? room.eco_temp, 17),
+        ecoCool: c(room.eco_cool, 27),
+        offAction: this._rooms?.schedule_off_action || "eco",
+      },
+      Date.now(),
+      { days: 8, timeZone: this.hass.config?.time_zone },
+    );
+    this._timelineKey = key;
+    return this._timelineCache;
+  }
+
+  /** The next schedule block that starts after now. */
+  _nextBlock() {
+    return this._timeline()?.find((p, i) => p.inBlock && (i > 0 || p.start > Date.now()));
+  }
+
+  /** Temperature text of a period for the room's climate mode ("21 °C", "21–24 °C" or "Aus"). */
+  _periodTemp(period) {
+    const t = (key, vars) => localize(this.hass, key, vars);
+    const mode = this._room?.climate_mode || "auto";
+    const { heat, cool } = period;
+    if (heat === null && cool === null) return t("schedule.off");
+    if (mode === "heat_only" || cool === undefined || cool === null) return formatTemp(this.hass, heat, 1);
+    if (mode === "cool_only" || heat === undefined || heat === null) return formatTemp(this.hass, cool, 1);
+    if (heat === cool) return formatTemp(this.hass, heat, 1);
+    return `${formatNumber(this.hass, heat, 1)}–${formatTemp(this.hass, cool, 1)}`;
+  }
+
+  _periodKind(period) {
+    if (!period.inBlock) return period.heat === null && period.cool === null ? "off" : "eco";
+    return period.custom ? "block" : "comfort";
+  }
+
+  _renderSchedule() {
+    const t = (key, vars) => localize(this.hass, key, vars);
+    const entityId = this._scheduleEntity();
+    if (!entityId) return nothing;
+    const stateObj = this.hass.states[entityId];
+    const title = stateObj?.attributes?.friendly_name || entityId;
+    const timeline = this._timeline();
+    const count = Math.max(1, Math.min(8, Number(this._config.schedule_items) || 3));
+    let rows;
+    if (timeline) {
+      const periods = timeline.slice(0, count);
+      rows = periods.map((p, i) => {
+        const kind = this._periodKind(p);
+        const isLast = p.end >= timeline[timeline.length - 1].end && i === timeline.length - 1;
+        return html`<div class="sched-row ${i === 0 ? "now" : ""} ${kind}">
+          <span class="sched-dot"></span>
+          <span class="sched-when">
+            <span class="sched-start">${i === 0 ? t("schedule.now") : formatUntil(this.hass, p.start / 1000)}</span>
+            <span class="sched-end"
+              >${isLast ? "" : t("schedule.until", { time: formatUntil(this.hass, p.end / 1000) })}</span
+            >
+          </span>
+          <span class="sched-kind">${t(`schedule.${kind}`)}</span>
+          <span class="sched-temp">${this._periodTemp(p)}</span>
+        </div>`;
+      });
+    } else if (stateObj?.attributes?.next_event) {
+      // Blocks not readable: at least show the next switch from the schedule helper
+      const next = Date.parse(stateObj.attributes.next_event);
+      rows = html`<div class="note">
+        ${t("schedule.next_change", { time: formatUntil(this.hass, next / 1000) })}
+      </div>`;
+    } else {
+      return nothing;
+    }
+    let note = nothing;
+    if (this._overrideActive()) {
+      const until = overrideUntil(this._stateObj, this._live);
+      note = html`<div class="note">
+        ${until
+          ? t("schedule.override_until", { time: formatUntil(this.hass, until) })
+          : t("schedule.override_permanent")}
+      </div>`;
+    }
+    return html`
+      <div id="schedule">
+        <div class="section-title clickable" @click=${() => this._moreInfo(entityId)}>
+          ${t("schedule.title")}<span class="hint">· ${title}</span>
+        </div>
+        <div class="sched">${rows}</div>
+        ${note}
       </div>
     `;
   }

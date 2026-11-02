@@ -66,6 +66,7 @@
         window_open_delay: 30,
         window_close_delay: 120,
         covers: ["cover.rollo_arbeitszimmer"],
+        schedules: [{ entity_id: "schedule.heizplan_arbeitszimmer" }],
         override_heat: null,
         override_cool: null,
         override_until: null,
@@ -131,6 +132,10 @@
       "binary_sensor.tuer_arbeitszimmer": st("binary_sensor.tuer_arbeitszimmer", "off", {
         device_class: "door",
         friendly_name: "Balkontür",
+      }),
+      "schedule.heizplan_arbeitszimmer": st("schedule.heizplan_arbeitszimmer", "off", {
+        friendly_name: "Heizplan Arbeitszimmer",
+        next_event: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
       }),
       "switch.roommind_vacation": st("switch.roommind_vacation", "off", { friendly_name: "Vacation Mode" }),
       "switch.roommind_arbeitszimmer_climate_control": st("switch.roommind_arbeitszimmer_climate_control", "on"),
@@ -237,7 +242,23 @@
           vacation_active: Boolean(vac && vac > now()),
           vacation_until: vac,
           climate_control_active: true,
+          schedule_off_action: "eco",
         };
+      }
+      case "call_service": {
+        if (msg.domain === "schedule" && msg.service === "get_schedule") {
+          const workday = [
+            { from: "06:00:00", to: "08:30:00", data: { temperature: 21.5 } },
+            { from: "16:00:00", to: "22:00:00", data: {} },
+          ];
+          const blocks = {
+            monday: workday, tuesday: workday, wednesday: workday, thursday: workday, friday: workday,
+            saturday: [{ from: "08:00:00", to: "23:00:00", data: { temperature: 22 } }],
+            sunday: [{ from: "08:00:00", to: "22:00:00", data: {} }],
+          };
+          return { context: {}, response: { [msg.target.entity_id]: blocks } };
+        }
+        throw { code: "not_found", message: "service" };
       }
       case "config/entity_registry/get":
         throw { code: "unauthorized", message: "nope" };

@@ -8,6 +8,7 @@ const SECTION_KEYS = [
   "show_target",
   "show_presets",
   "show_modes",
+  "show_schedule",
   "show_windows",
   "show_toggles",
   "show_climate_control",
@@ -194,6 +195,7 @@ export class RoomMindCardEditor extends LitElement {
         name: "",
         schema: [
           { name: "compact", selector: { boolean: {} } },
+          { name: "schedule_items", selector: { number: { min: 1, max: 8, step: 1, mode: "box" } } },
           {
             name: "apply_delay",
             selector: { number: { min: 300, max: 5000, step: 100, mode: "box", unit_of_measurement: "ms" } },

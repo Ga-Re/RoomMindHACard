@@ -530,6 +530,93 @@ export const cardStyles = css`
     }
   }
 
+  /* Schedule ------------------------------------------------------------ */
+  .section-title.clickable {
+    cursor: pointer;
+  }
+  .sched {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  .sched-row {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 4px;
+    position: relative;
+    --sched-color: var(--rm-comfort);
+  }
+  .sched-row.block {
+    --sched-color: var(--rm-heat);
+  }
+  .sched-row.eco {
+    --sched-color: var(--rm-eco);
+  }
+  .sched-row.off {
+    --sched-color: var(--rm-off);
+  }
+  .sched-row:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 10px;
+    top: 24px;
+    bottom: -12px;
+    width: 2px;
+    background: var(--divider-color, rgba(0, 0, 0, 0.12));
+  }
+  .sched-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--sched-color);
+    background: var(--card-background-color, #fff);
+    box-sizing: border-box;
+    position: relative;
+    z-index: 1;
+  }
+  .sched-row.now .sched-dot {
+    background: var(--sched-color);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--sched-color) 25%, transparent);
+  }
+  .sched-when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+    min-width: 0;
+  }
+  .sched-start {
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .sched-end {
+    font-size: 0.82em;
+    color: var(--secondary-text-color);
+    white-space: nowrap;
+  }
+  .sched-kind {
+    font-size: 0.75em;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: var(--sched-color);
+    background: color-mix(in srgb, var(--sched-color) 14%, transparent);
+    white-space: nowrap;
+  }
+  .sched-temp {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 56px;
+    text-align: right;
+  }
+  .override .text .sub + .sub {
+    margin-top: 2px;
+  }
+
   /* Rows (windows, switches) ------------------------------------------- */
   .rows {
     display: flex;
